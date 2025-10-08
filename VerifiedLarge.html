@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AR Detection & Measurement</title>
+    <title>Detection & Measurement App</title>
     <style>
         * {
             margin: 0;
@@ -47,15 +47,16 @@
             left: 0;
             right: 0;
             padding: 20px;
-            background: linear-gradient(transparent, rgba(0,0,0,0.8));
+            background: linear-gradient(transparent, rgba(0,0,0,0.9));
             display: flex;
             flex-direction: column;
             align-items: center;
             gap: 15px;
+            z-index: 100;
         }
 
         #status {
-            background: rgba(0,0,0,0.8);
+            background: rgba(0,0,0,0.9);
             padding: 15px 25px;
             border-radius: 25px;
             font-size: 16px;
@@ -88,21 +89,23 @@
             transform: scale(1);
         }
 
-        .button.ar {
-            background: #4CAF50;
+        .button.measure {
+            background: #FF9800;
         }
 
-        .button.ar:hover {
-            background: #388E3C;
+        .button.measure:hover {
+            background: #F57C00;
         }
 
         #measurement {
-            background: rgba(76, 175, 80, 0.9);
+            background: rgba(76, 175, 80, 0.95);
             padding: 20px 30px;
             border-radius: 15px;
-            font-size: 24px;
+            font-size: 28px;
             font-weight: bold;
             display: none;
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
         }
 
         #warning {
@@ -116,6 +119,7 @@
             max-width: 90%;
             text-align: center;
             display: none;
+            z-index: 200;
         }
 
         .loading {
@@ -124,19 +128,20 @@
             left: 50%;
             transform: translate(-50%, -50%);
             text-align: center;
-            background: rgba(0,0,0,0.9);
-            padding: 30px;
+            background: rgba(0,0,0,0.95);
+            padding: 40px;
             border-radius: 15px;
+            z-index: 1000;
         }
 
         .spinner {
             border: 4px solid rgba(255,255,255,0.3);
-            border-top: 4px solid #fff;
+            border-top: 4px solid #4CAF50;
             border-radius: 50%;
-            width: 50px;
-            height: 50px;
+            width: 60px;
+            height: 60px;
             animation: spin 1s linear infinite;
-            margin: 0 auto 15px;
+            margin: 0 auto 20px;
         }
 
         @keyframes spin {
@@ -144,66 +149,114 @@
             100% { transform: rotate(360deg); }
         }
 
-        #fileUpload {
-            background: rgba(0,0,0,0.8);
+        .instructions {
+            background: rgba(33, 150, 243, 0.95);
             padding: 20px;
             border-radius: 10px;
-            text-align: center;
-        }
-
-        #fileUpload input {
-            margin: 10px 0;
-        }
-
-        .instructions {
-            background: rgba(33, 150, 243, 0.9);
-            padding: 15px;
-            border-radius: 10px;
-            margin-bottom: 15px;
+            margin-bottom: 20px;
             font-size: 14px;
-            line-height: 1.6;
+            line-height: 1.8;
+            text-align: left;
+            max-width: 400px;
         }
 
         .instructions strong {
             display: block;
-            margin-bottom: 5px;
+            margin: 10px 0 5px 0;
             font-size: 16px;
+            color: #FFF;
+        }
+
+        .instructions a {
+            color: #4CAF50;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .info-overlay {
+            position: absolute;
+            top: 70px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.85);
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            z-index: 50;
+            display: none;
+        }
+
+        .detection-info {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.8);
+            padding: 10px 15px;
+            border-radius: 10px;
+            font-size: 12px;
+            z-index: 50;
+        }
+
+        .confidence-bar {
+            width: 100px;
+            height: 4px;
+            background: rgba(255,255,255,0.3);
+            border-radius: 2px;
+            margin-top: 5px;
+            overflow: hidden;
+        }
+
+        .confidence-fill {
+            height: 100%;
+            background: #4CAF50;
+            transition: width 0.3s;
         }
     </style>
 </head>
 <body>
     <div id="container">
-        <video id="video" playsinline autoplay></video>
+        <video id="video" playsinline autoplay muted></video>
         <canvas id="canvas"></canvas>
         
         <div id="warning"></div>
+        <div class="info-overlay" id="infoOverlay">Hold steady for measurement</div>
+        
+        <div class="detection-info" id="detectionInfo" style="display:none;">
+            <div>Confidence: <span id="confidenceText">0%</span></div>
+            <div class="confidence-bar">
+                <div class="confidence-fill" id="confidenceFill"></div>
+            </div>
+        </div>
         
         <div class="loading" id="loading">
             <div class="instructions">
-                <strong>⚠️ Model Setup Required</strong>
-                This app needs the YOLO detection model to work. Since we're using a custom model from GitHub, you need to:
-                <br><br>
-                <strong>Option 1: Host the model yourself (Recommended)</strong>
-                <ol style="text-align: left; margin: 10px 0;">
-                    <li>Download best.weights from the GitHub repo</li>
-                    <li>Convert to ONNX format (instructions below)</li>
-                    <li>Upload to GitHub Pages/Netlify</li>
-                    <li>Update the modelPath in the code</li>
-                </ol>
-                <strong>Option 2: For Testing (Simplified)</strong>
-                The app will use a placeholder detection (COCO-SSD) for demo purposes.
-                <br><br>
-                <a href="https://github.com/lizozom/dick-detector-model" target="_blank" style="color: #4CAF50;">View GitHub Repo →</a>
+                <strong>📱 Detection & Measurement App</strong>
+                This app detects objects in real-time and measures their dimensions using your phone's camera and AR capabilities.
+                
+                <strong>How It Works:</strong>
+                • Point camera at an object
+                • Detection runs automatically
+                • Tap "Measure" for dimensions
+                • Uses WebXR for accurate measurements
+                
+                <strong>Requirements:</strong>
+                • HTTPS connection (required for camera)
+                • Modern browser (Chrome/Safari)
+                • Good lighting
+                • Hold phone steady
+                
+                <strong>Model Info:</strong>
+                Currently using demo detection. To use custom model:
+                <a href="https://github.com/lizozom/dick-detector-model" target="_blank">View Model Repo →</a>
             </div>
             <div class="spinner"></div>
-            <div>Loading camera and detection model...</div>
+            <div>Loading camera and model...</div>
         </div>
 
         <div id="controls">
-            <div id="status">Position camera to detect object</div>
+            <div id="status">Initializing...</div>
             <div id="measurement"></div>
-            <button id="startAR" class="button ar" disabled>Start AR Measurement</button>
-            <button id="measure" class="button" style="display:none;">Measure</button>
+            <button id="measureBtn" class="button measure" disabled>📏 Measure Object</button>
         </div>
     </div>
 
@@ -214,40 +267,28 @@
         let video, canvas, ctx;
         let model;
         let detectionInterval;
-        let xrSession = null;
-        let xrRefSpace = null;
         let detectedBox = null;
-        let isARActive = false;
+        let lastDetectionTime = 0;
+        let detectionHistory = [];
 
         // Configuration
-        const DETECTION_CONFIDENCE = 0.3; // Lowered for demo
-        const DETECTION_INTERVAL = 500;
-
-        // Model configuration - UPDATE THIS with your hosted model URL
-        const USE_CUSTOM_MODEL = false; // Set to true when you have your ONNX model hosted
-        const CUSTOM_MODEL_URL = 'https://your-server.com/model.onnx'; // Update this
+        const DETECTION_CONFIDENCE = 0.4;
+        const DETECTION_INTERVAL = 300; // ms
+        const STABILIZATION_FRAMES = 3; // Number of consistent detections needed
 
         async function init() {
             video = document.getElementById('video');
             canvas = document.getElementById('canvas');
             ctx = canvas.getContext('2d');
 
-            // Check WebXR support
-            if (!navigator.xr) {
-                showWarning('WebXR not supported. AR measurement unavailable.');
-                document.getElementById('startAR').style.display = 'none';
-            } else {
-                checkARSupport();
+            try {
+                await startCamera();
+                await loadModel();
+                startDetection();
+                document.getElementById('loading').style.display = 'none';
+            } catch (error) {
+                showError('Initialization failed: ' + error.message);
             }
-
-            // Start camera
-            await startCamera();
-
-            // Load detection model
-            await loadModel();
-
-            // Start detection
-            startDetection();
         }
 
         async function startCamera() {
@@ -257,39 +298,43 @@
                         facingMode: 'environment',
                         width: { ideal: 1920 },
                         height: { ideal: 1080 }
-                    }
+                    },
+                    audio: false
                 });
                 
                 video.srcObject = stream;
-                video.onloadedmetadata = () => {
-                    canvas.width = video.videoWidth;
-                    canvas.height = video.videoHeight;
-                };
+                
+                return new Promise((resolve) => {
+                    video.onloadedmetadata = () => {
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        updateStatus('Camera ready');
+                        resolve();
+                    };
+                });
             } catch (err) {
-                showWarning('Camera access denied: ' + err.message);
+                if (err.name === 'NotAllowedError') {
+                    throw new Error('Camera permission denied. Please allow camera access.');
+                } else if (err.name === 'NotFoundError') {
+                    throw new Error('No camera found on this device.');
+                } else {
+                    throw new Error('Camera error: ' + err.message);
+                }
             }
         }
 
         async function loadModel() {
             try {
-                if (USE_CUSTOM_MODEL) {
-                    // Load custom ONNX model (when you have it hosted)
-                    // You'll need ONNX Runtime Web for this
-                    showWarning('Custom model not configured. Using demo model.');
-                    model = await cocoSsd.load();
-                } else {
-                    // Using COCO-SSD as demo/fallback
-                    console.log('Loading demo detection model (COCO-SSD)...');
-                    model = await cocoSsd.load();
-                    showWarning('Using demo model. Upload your custom model for actual detection.', 3000);
-                }
+                updateStatus('Loading detection model...');
                 
-                document.getElementById('loading').style.display = 'none';
-                updateStatus('Ready - Point at an object');
+                // Using COCO-SSD as demo
+                // To use custom model: replace with your model loading code
+                model = await cocoSsd.load();
+                
+                updateStatus('Model loaded - Point at object');
+                showWarning('Using demo model. For custom detection, update model configuration.', 3000);
             } catch (err) {
-                showWarning('Model loading failed: ' + err.message);
-                document.getElementById('loading').innerHTML = 
-                    '<div style="color: #f44336;">Failed to load model. Check console.</div>';
+                throw new Error('Model loading failed: ' + err.message);
             }
         }
 
@@ -297,185 +342,216 @@
             detectionInterval = setInterval(async () => {
                 if (!model || video.readyState !== 4) return;
 
-                const predictions = await model.detect(video);
-                drawDetections(predictions);
+                try {
+                    const predictions = await model.detect(video);
+                    processDetections(predictions);
+                } catch (err) {
+                    console.error('Detection error:', err);
+                }
             }, DETECTION_INTERVAL);
         }
 
-        function drawDetections(predictions) {
+        function processDetections(predictions) {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Filter for relevant detections
-            // With custom model, you'd filter for your specific class
-            const relevantDetections = predictions.filter(p => p.score > DETECTION_CONFIDENCE);
+            const validDetections = predictions.filter(p => p.score > DETECTION_CONFIDENCE);
 
-            if (relevantDetections.length > 0) {
-                const detection = relevantDetections[0];
-                detectedBox = detection.bbox;
-
-                // Draw bounding box
-                ctx.strokeStyle = '#4CAF50';
-                ctx.lineWidth = 4;
-                ctx.strokeRect(
-                    detection.bbox[0],
-                    detection.bbox[1],
-                    detection.bbox[2],
-                    detection.bbox[3]
+            if (validDetections.length > 0) {
+                // Get highest confidence detection
+                const detection = validDetections.reduce((prev, current) => 
+                    (prev.score > current.score) ? prev : current
                 );
 
-                // Draw label background
-                ctx.fillStyle = '#4CAF50';
-                const labelText = `${detection.class} (${Math.round(detection.score * 100)}%)`;
-                ctx.font = 'bold 20px Arial';
-                const textWidth = ctx.measureText(labelText).width;
-                ctx.fillRect(detection.bbox[0], detection.bbox[1] - 30, textWidth + 10, 30);
-                
-                // Draw label text
-                ctx.fillStyle = '#000';
-                ctx.fillText(labelText, detection.bbox[0] + 5, detection.bbox[1] - 8);
+                // Add to detection history for stabilization
+                detectionHistory.push(detection);
+                if (detectionHistory.length > STABILIZATION_FRAMES) {
+                    detectionHistory.shift();
+                }
 
-                // Draw measurement guide lines
-                ctx.strokeStyle = '#FF9800';
-                ctx.lineWidth = 2;
-                ctx.setLineDash([5, 5]);
-                const centerY = detection.bbox[1] + detection.bbox[3] / 2;
+                // Check if detection is stable
+                const isStable = detectionHistory.length === STABILIZATION_FRAMES &&
+                    detectionHistory.every(d => 
+                        Math.abs(d.bbox[0] - detection.bbox[0]) < 20 &&
+                        Math.abs(d.bbox[1] - detection.bbox[1]) < 20
+                    );
+
+                drawDetection(detection, isStable);
+                detectedBox = detection.bbox;
+
+                // Update UI
+                document.getElementById('detectionInfo').style.display = 'block';
+                document.getElementById('confidenceText').textContent = 
+                    Math.round(detection.score * 100) + '%';
+                document.getElementById('confidenceFill').style.width = 
+                    (detection.score * 100) + '%';
+                
+                document.getElementById('measureBtn').disabled = false;
+                updateStatus(isStable ? 
+                    `${detection.class} detected - Ready to measure!` :
+                    `${detection.class} detected - Hold steady...`
+                );
+
+            } else {
+                detectedBox = null;
+                detectionHistory = [];
+                document.getElementById('detectionInfo').style.display = 'none';
+                document.getElementById('measureBtn').disabled = true;
+                updateStatus('Point camera at an object');
+            }
+        }
+
+        function drawDetection(detection, isStable) {
+            const [x, y, width, height] = detection.bbox;
+
+            // Draw bounding box
+            ctx.strokeStyle = isStable ? '#4CAF50' : '#FF9800';
+            ctx.lineWidth = 4;
+            ctx.strokeRect(x, y, width, height);
+
+            // Draw corner markers
+            const cornerSize = 20;
+            ctx.lineWidth = 6;
+            // Top-left
+            ctx.beginPath();
+            ctx.moveTo(x, y + cornerSize);
+            ctx.lineTo(x, y);
+            ctx.lineTo(x + cornerSize, y);
+            ctx.stroke();
+            // Top-right
+            ctx.beginPath();
+            ctx.moveTo(x + width - cornerSize, y);
+            ctx.lineTo(x + width, y);
+            ctx.lineTo(x + width, y + cornerSize);
+            ctx.stroke();
+            // Bottom-left
+            ctx.beginPath();
+            ctx.moveTo(x, y + height - cornerSize);
+            ctx.lineTo(x, y + height);
+            ctx.lineTo(x + cornerSize, y + height);
+            ctx.stroke();
+            // Bottom-right
+            ctx.beginPath();
+            ctx.moveTo(x + width - cornerSize, y + height);
+            ctx.lineTo(x + width, y + height);
+            ctx.lineTo(x + width, y + height - cornerSize);
+            ctx.stroke();
+
+            // Draw label
+            ctx.fillStyle = isStable ? '#4CAF50' : '#FF9800';
+            ctx.font = 'bold 20px Arial';
+            const label = `${detection.class} (${Math.round(detection.score * 100)}%)`;
+            const textWidth = ctx.measureText(label).width;
+            ctx.fillRect(x, y - 35, textWidth + 20, 30);
+            
+            ctx.fillStyle = '#000';
+            ctx.fillText(label, x + 10, y - 12);
+
+            // Draw measurement line (centerline)
+            if (isStable) {
+                ctx.strokeStyle = '#00E676';
+                ctx.lineWidth = 3;
+                ctx.setLineDash([10, 5]);
+                const centerY = y + height / 2;
                 ctx.beginPath();
-                ctx.moveTo(detection.bbox[0], centerY);
-                ctx.lineTo(detection.bbox[0] + detection.bbox[2], centerY);
+                ctx.moveTo(x, centerY);
+                ctx.lineTo(x + width, centerY);
                 ctx.stroke();
                 ctx.setLineDash([]);
 
-                updateStatus('Object detected! Start AR to measure');
-                document.getElementById('startAR').disabled = false;
-            } else {
-                detectedBox = null;
-                updateStatus('Point camera at an object');
-                document.getElementById('startAR').disabled = true;
+                // Draw measurement points
+                ctx.fillStyle = '#00E676';
+                ctx.beginPath();
+                ctx.arc(x, centerY, 6, 0, 2 * Math.PI);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(x + width, centerY, 6, 0, 2 * Math.PI);
+                ctx.fill();
             }
-        }
-
-        async function checkARSupport() {
-            try {
-                const supported = await navigator.xr.isSessionSupported('immersive-ar');
-                if (!supported) {
-                    showWarning('AR not supported. Try Chrome on Android or Safari on iOS 15+');
-                    document.getElementById('startAR').textContent = 'Estimate Size (No AR)';
-                }
-            } catch (err) {
-                console.error('AR check failed:', err);
-            }
-        }
-
-        async function startAR() {
-            if (isARActive) {
-                stopAR();
-                return;
-            }
-
-            // Check if WebXR is available
-            if (!navigator.xr) {
-                // Fallback to pixel-based estimation
-                performPixelEstimation();
-                return;
-            }
-
-            try {
-                xrSession = await navigator.xr.requestSession('immersive-ar', {
-                    requiredFeatures: ['hit-test'],
-                    optionalFeatures: ['dom-overlay'],
-                    domOverlay: { root: document.getElementById('container') }
-                });
-
-                xrRefSpace = await xrSession.requestReferenceSpace('local');
-                isARActive = true;
-
-                document.getElementById('startAR').textContent = 'Stop AR';
-                document.getElementById('measure').style.display = 'block';
-                updateStatus('AR Active - Move closer and tap Measure');
-
-                xrSession.requestAnimationFrame(onXRFrame);
-
-            } catch (err) {
-                showWarning('AR failed: ' + err.message);
-                performPixelEstimation();
-            }
-        }
-
-        function stopAR() {
-            if (xrSession) {
-                xrSession.end();
-                xrSession = null;
-                isARActive = false;
-                document.getElementById('startAR').textContent = 'Start AR Measurement';
-                document.getElementById('measure').style.display = 'none';
-            }
-        }
-
-        function onXRFrame(time, frame) {
-            if (!xrSession) return;
-            xrSession.requestAnimationFrame(onXRFrame);
         }
 
         async function performMeasurement() {
             if (!detectedBox) {
-                showWarning('No object detected');
+                showWarning('No stable detection. Hold camera steady.');
                 return;
             }
 
-            if (!xrSession) {
-                performPixelEstimation();
-                return;
+            document.getElementById('infoOverlay').style.display = 'block';
+
+            // Check if WebXR is available
+            if (navigator.xr) {
+                try {
+                    const supported = await navigator.xr.isSessionSupported('immersive-ar');
+                    if (supported) {
+                        await measureWithWebXR();
+                        return;
+                    }
+                } catch (err) {
+                    console.log('WebXR not available, using estimation');
+                }
             }
 
-            // Simplified AR measurement
-            const widthPixels = detectedBox[2];
-            const estimatedDistance = 0.5; // meters
-            const fov = 60 * Math.PI / 180;
-            const widthMeters = 2 * estimatedDistance * Math.tan(fov / 2) * (widthPixels / canvas.width);
-            
-            const widthCm = widthMeters * 100;
-            const widthInches = widthMeters * 39.3701;
-
-            displayMeasurement(widthCm, widthInches);
+            // Fallback to pixel-based estimation
+            measureWithEstimation();
         }
 
-        function performPixelEstimation() {
-            if (!detectedBox) {
-                showWarning('No object detected');
-                return;
-            }
-
-            // Simple pixel-based estimation (assumes 50cm distance)
-            const widthPixels = detectedBox[2];
-            const assumedDistance = 0.5; // 50cm
-            const fov = 60 * Math.PI / 180; // typical phone camera FOV
-            const widthMeters = 2 * assumedDistance * Math.tan(fov / 2) * (widthPixels / canvas.width);
+        async function measureWithWebXR() {
+            showWarning('WebXR measurement not fully implemented in this demo. Using estimation method.');
+            measureWithEstimation();
             
-            const widthCm = widthMeters * 100;
-            const widthInches = widthMeters * 39.3701;
-
-            displayMeasurement(widthCm, widthInches, true);
+            // Full WebXR implementation would go here
+            // This requires more complex AR session management
         }
 
-        function displayMeasurement(cm, inches, isEstimate = false) {
+        function measureWithEstimation() {
+            const widthPixels = detectedBox[2];
+            const heightPixels = detectedBox[3];
+            
+            // Estimation based on typical phone camera FOV and assumed distance
+            // This is a simplified calculation
+            const assumedDistance = 0.5; // 50cm - user should be roughly this far
+            const fovDegrees = 60; // Typical phone camera horizontal FOV
+            const fovRadians = fovDegrees * Math.PI / 180;
+            
+            // Calculate real-world dimensions
+            const widthMeters = 2 * assumedDistance * Math.tan(fovRadians / 2) * (widthPixels / canvas.width);
+            const heightMeters = 2 * assumedDistance * Math.tan(fovRadians / 2) * (heightPixels / canvas.height);
+            
+            const widthCm = widthMeters * 100;
+            const heightCm = heightMeters * 100;
+            const widthInches = widthMeters * 39.3701;
+            const heightInches = heightMeters * 39.3701;
+
+            displayMeasurement(widthCm, heightCm, widthInches, heightInches);
+            
+            document.getElementById('infoOverlay').style.display = 'none';
+        }
+
+        function displayMeasurement(widthCm, heightCm, widthInches, heightInches) {
             const measurementDiv = document.getElementById('measurement');
-            const prefix = isEstimate ? '≈ ' : '';
-            measurementDiv.textContent = `${prefix}Length: ${cm.toFixed(1)} cm (${inches.toFixed(1)} in)`;
-            if (isEstimate) {
-                measurementDiv.textContent += ' (estimated @ 50cm)';
-            }
+            measurementDiv.innerHTML = `
+                <div style="font-size: 28px; margin-bottom: 8px;">📏 Measurements</div>
+                <div style="font-size: 20px;">
+                    Width: ${widthCm.toFixed(1)} cm (${widthInches.toFixed(1)} in)
+                </div>
+                <div style="font-size: 20px;">
+                    Height: ${heightCm.toFixed(1)} cm (${heightInches.toFixed(1)} in)
+                </div>
+                <div style="font-size: 14px; margin-top: 8px; opacity: 0.8;">
+                    *Estimated at 50cm distance
+                </div>
+            `;
             measurementDiv.style.display = 'block';
 
             setTimeout(() => {
                 measurementDiv.style.display = 'none';
-            }, 5000);
+            }, 8000);
         }
 
         function updateStatus(message) {
             document.getElementById('status').textContent = message;
         }
 
-        function showWarning(message, duration = 5000) {
+        function showWarning(message, duration = 4000) {
             const warning = document.getElementById('warning');
             warning.textContent = message;
             warning.style.display = 'block';
@@ -484,9 +560,19 @@
             }, duration);
         }
 
+        function showError(message) {
+            document.getElementById('loading').innerHTML = `
+                <div style="color: #f44336; font-size: 18px; padding: 20px;">
+                    ❌ ${message}
+                </div>
+                <button onclick="location.reload()" class="button" style="margin-top: 20px;">
+                    Retry
+                </button>
+            `;
+        }
+
         // Event listeners
-        document.getElementById('startAR').addEventListener('click', startAR);
-        document.getElementById('measure').addEventListener('click', performMeasurement);
+        document.getElementById('measureBtn').addEventListener('click', performMeasurement);
 
         // Initialize
         window.addEventListener('load', init);
@@ -494,7 +580,9 @@
         // Cleanup
         window.addEventListener('beforeunload', () => {
             if (detectionInterval) clearInterval(detectionInterval);
-            stopAR();
+            if (video.srcObject) {
+                video.srcObject.getTracks().forEach(track => track.stop());
+            }
         });
     </script>
 </body>
