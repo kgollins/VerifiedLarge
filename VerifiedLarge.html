@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Detection & Measurement App</title>
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -43,11 +44,11 @@
 
         #controls {
             position: absolute;
-            bottom: 0;
+            top: 0;
             left: 0;
             right: 0;
             padding: 20px;
-            background: linear-gradient(transparent, rgba(0,0,0,0.9));
+            background: linear-gradient(rgba(0,0,0,0.9), transparent);
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -106,11 +107,17 @@
             display: none;
             text-align: center;
             box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            max-width: 90%;
+            z-index: 150;
         }
 
         #warning {
             position: absolute;
-            top: 20px;
+            top: 120px;
             left: 50%;
             transform: translateX(-50%);
             background: rgba(255, 152, 0, 0.95);
@@ -132,6 +139,7 @@
             padding: 40px;
             border-radius: 15px;
             z-index: 1000;
+            max-width: 90%;
         }
 
         .spinner {
@@ -149,46 +157,9 @@
             100% { transform: rotate(360deg); }
         }
 
-        .instructions {
-            background: rgba(33, 150, 243, 0.95);
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            font-size: 14px;
-            line-height: 1.8;
-            text-align: left;
-            max-width: 400px;
-        }
-
-        .instructions strong {
-            display: block;
-            margin: 10px 0 5px 0;
-            font-size: 16px;
-            color: #FFF;
-        }
-
-        .instructions a {
-            color: #4CAF50;
-            text-decoration: none;
-            font-weight: bold;
-        }
-
-        .info-overlay {
-            position: absolute;
-            top: 70px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0,0,0,0.85);
-            padding: 10px 20px;
-            border-radius: 20px;
-            font-size: 14px;
-            z-index: 50;
-            display: none;
-        }
-
         .detection-info {
             position: absolute;
-            top: 10px;
+            bottom: 10px;
             right: 10px;
             background: rgba(0,0,0,0.8);
             padding: 10px 15px;
@@ -219,7 +190,6 @@
         <canvas id="canvas"></canvas>
         
         <div id="warning"></div>
-        <div class="info-overlay" id="infoOverlay">Hold steady for measurement</div>
         
         <div class="detection-info" id="detectionInfo" style="display:none;">
             <div>Confidence: <span id="confidenceText">0%</span></div>
@@ -229,52 +199,32 @@
         </div>
         
         <div class="loading" id="loading">
-            <div class="instructions">
-                <strong>📱 Detection & Measurement App</strong>
-                This app detects objects in real-time and measures their dimensions using your phone's camera and AR capabilities.
-                
-                <strong>How It Works:</strong>
-                • Point camera at an object
-                • Detection runs automatically
-                • Tap "Measure" for dimensions
-                • Uses WebXR for accurate measurements
-                
-                <strong>Requirements:</strong>
-                • HTTPS connection (required for camera)
-                • Modern browser (Chrome/Safari)
-                • Good lighting
-                • Hold phone steady
-                
-                <strong>Model Info:</strong>
-                Currently using demo detection. To use custom model:
-                <a href="https://github.com/lizozom/dick-detector-model" target="_blank">View Model Repo →</a>
-            </div>
             <div class="spinner"></div>
-            <div>Loading camera and model...</div>
+            <div>Loading custom detection model...</div>
+            <div style="font-size: 12px; margin-top: 10px; opacity: 0.7;">This may take a moment</div>
         </div>
 
         <div id="controls">
             <div id="status">Initializing...</div>
-            <div id="measurement"></div>
             <button id="measureBtn" class="button measure" disabled>📏 Measure Object</button>
         </div>
+        
+        <div id="measurement"></div>
     </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3"></script>
 
     <script type="module">
         let video, canvas, ctx;
-        let model;
+        let session;
         let detectionInterval;
         let detectedBox = null;
-        let lastDetectionTime = 0;
         let detectionHistory = [];
 
         // Configuration
-        const DETECTION_CONFIDENCE = 0.4;
-        const DETECTION_INTERVAL = 300; // ms
-        const STABILIZATION_FRAMES = 3; // Number of consistent detections needed
+        const MODEL_URL = 'https://kgollins.github.io/VerifiedLarge/dick-detector.onnx';
+        const INPUT_SIZE = 416;
+        const DETECTION_CONFIDENCE = 0.5;
+        const DETECTION_INTERVAL = 500;
+        const STABILIZATION_FRAMES = 3;
 
         async function init() {
             video = document.getElementById('video');
@@ -314,9 +264,9 @@
                 });
             } catch (err) {
                 if (err.name === 'NotAllowedError') {
-                    throw new Error('Camera permission denied. Please allow camera access.');
+                    throw new Error('Camera permission denied');
                 } else if (err.name === 'NotFoundError') {
-                    throw new Error('No camera found on this device.');
+                    throw new Error('No camera found');
                 } else {
                     throw new Error('Camera error: ' + err.message);
                 }
@@ -325,25 +275,29 @@
 
         async function loadModel() {
             try {
-                updateStatus('Loading detection model...');
+                updateStatus('Loading custom detection model...');
                 
-                // Using COCO-SSD as demo
-                // To use custom model: replace with your model loading code
-                model = await cocoSsd.load();
+                // Load ONNX model
+                session = await ort.InferenceSession.create(MODEL_URL);
+                
+                console.log('Model loaded successfully');
+                console.log('Input names:', session.inputNames);
+                console.log('Output names:', session.outputNames);
                 
                 updateStatus('Model loaded - Point at object');
-                showWarning('Using demo model. For custom detection, update model configuration.', 3000);
+                showWarning('Custom detection model loaded! 🎉', 3000);
             } catch (err) {
+                console.error('Model loading error:', err);
                 throw new Error('Model loading failed: ' + err.message);
             }
         }
 
         function startDetection() {
             detectionInterval = setInterval(async () => {
-                if (!model || video.readyState !== 4) return;
+                if (!session || video.readyState !== 4) return;
 
                 try {
-                    const predictions = await model.detect(video);
+                    const predictions = await detectObjects();
                     processDetections(predictions);
                 } catch (err) {
                     console.error('Detection error:', err);
@@ -351,34 +305,106 @@
             }, DETECTION_INTERVAL);
         }
 
+        async function detectObjects() {
+            // Prepare input tensor
+            const inputTensor = await prepareInput();
+            
+            // Run inference
+            const feeds = {};
+            feeds[session.inputNames[0]] = inputTensor;
+            const results = await session.run(feeds);
+            
+            // Get output
+            const output = results[session.outputNames[0]];
+            
+            // Process YOLO output
+            return processYOLOOutput(output);
+        }
+
+        async function prepareInput() {
+            // Create offscreen canvas for preprocessing
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = INPUT_SIZE;
+            tempCanvas.height = INPUT_SIZE;
+            const tempCtx = tempCanvas.getContext('2d');
+            
+            // Draw and resize video frame
+            tempCtx.drawImage(video, 0, 0, INPUT_SIZE, INPUT_SIZE);
+            
+            // Get image data
+            const imageData = tempCtx.getImageData(0, 0, INPUT_SIZE, INPUT_SIZE);
+            const pixels = imageData.data;
+            
+            // Convert to tensor format [1, 3, 416, 416]
+            const red = [];
+            const green = [];
+            const blue = [];
+            
+            for (let i = 0; i < pixels.length; i += 4) {
+                red.push(pixels[i] / 255.0);
+                green.push(pixels[i + 1] / 255.0);
+                blue.push(pixels[i + 2] / 255.0);
+            }
+            
+            const inputArray = Float32Array.from([...red, ...green, ...blue]);
+            return new ort.Tensor('float32', inputArray, [1, 3, INPUT_SIZE, INPUT_SIZE]);
+        }
+
+        function processYOLOOutput(output) {
+            const detections = [];
+            const data = output.data;
+            const dims = output.dims;
+            
+            // YOLO output format varies, this is a common structure
+            // Adjust based on actual model output
+            const numDetections = dims[1];
+            const numValues = dims[2];
+            
+            for (let i = 0; i < numDetections; i++) {
+                const offset = i * numValues;
+                
+                // Common YOLO format: [x, y, w, h, confidence, ...classes]
+                const confidence = data[offset + 4];
+                
+                if (confidence > DETECTION_CONFIDENCE) {
+                    const x = data[offset];
+                    const y = data[offset + 1];
+                    const w = data[offset + 2];
+                    const h = data[offset + 3];
+                    
+                    // Convert from normalized coordinates to canvas coordinates
+                    const xCanvas = (x - w / 2) * canvas.width;
+                    const yCanvas = (y - h / 2) * canvas.height;
+                    const wCanvas = w * canvas.width;
+                    const hCanvas = h * canvas.height;
+                    
+                    detections.push({
+                        bbox: [xCanvas, yCanvas, wCanvas, hCanvas],
+                        score: confidence,
+                        class: 'object'
+                    });
+                }
+            }
+            
+            return detections;
+        }
+
         function processDetections(predictions) {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            const validDetections = predictions.filter(p => p.score > DETECTION_CONFIDENCE);
-
-            if (validDetections.length > 0) {
-                // Get highest confidence detection
-                const detection = validDetections.reduce((prev, current) => 
-                    (prev.score > current.score) ? prev : current
-                );
-
-                // Add to detection history for stabilization
+            if (predictions.length > 0) {
+                const detection = predictions[0];
+                
                 detectionHistory.push(detection);
                 if (detectionHistory.length > STABILIZATION_FRAMES) {
                     detectionHistory.shift();
                 }
 
-                // Check if detection is stable
-                const isStable = detectionHistory.length === STABILIZATION_FRAMES &&
-                    detectionHistory.every(d => 
-                        Math.abs(d.bbox[0] - detection.bbox[0]) < 20 &&
-                        Math.abs(d.bbox[1] - detection.bbox[1]) < 20
-                    );
+                const isStable = detectionHistory.length === STABILIZATION_FRAMES;
 
                 drawDetection(detection, isStable);
                 detectedBox = detection.bbox;
 
-                // Update UI
                 document.getElementById('detectionInfo').style.display = 'block';
                 document.getElementById('confidenceText').textContent = 
                     Math.round(detection.score * 100) + '%';
@@ -387,8 +413,8 @@
                 
                 document.getElementById('measureBtn').disabled = false;
                 updateStatus(isStable ? 
-                    `${detection.class} detected - Ready to measure!` :
-                    `${detection.class} detected - Hold steady...`
+                    'Object detected - Ready to measure!' :
+                    'Object detected - Hold steady...'
                 );
 
             } else {
@@ -403,50 +429,49 @@
         function drawDetection(detection, isStable) {
             const [x, y, width, height] = detection.bbox;
 
-            // Draw bounding box
             ctx.strokeStyle = isStable ? '#4CAF50' : '#FF9800';
             ctx.lineWidth = 4;
             ctx.strokeRect(x, y, width, height);
 
-            // Draw corner markers
+            // Corner markers
             const cornerSize = 20;
             ctx.lineWidth = 6;
-            // Top-left
+            
             ctx.beginPath();
             ctx.moveTo(x, y + cornerSize);
             ctx.lineTo(x, y);
             ctx.lineTo(x + cornerSize, y);
             ctx.stroke();
-            // Top-right
+            
             ctx.beginPath();
             ctx.moveTo(x + width - cornerSize, y);
             ctx.lineTo(x + width, y);
             ctx.lineTo(x + width, y + cornerSize);
             ctx.stroke();
-            // Bottom-left
+            
             ctx.beginPath();
             ctx.moveTo(x, y + height - cornerSize);
             ctx.lineTo(x, y + height);
             ctx.lineTo(x + cornerSize, y + height);
             ctx.stroke();
-            // Bottom-right
+            
             ctx.beginPath();
             ctx.moveTo(x + width - cornerSize, y + height);
             ctx.lineTo(x + width, y + height);
             ctx.lineTo(x + width, y + height - cornerSize);
             ctx.stroke();
 
-            // Draw label
+            // Label
             ctx.fillStyle = isStable ? '#4CAF50' : '#FF9800';
             ctx.font = 'bold 20px Arial';
-            const label = `${detection.class} (${Math.round(detection.score * 100)}%)`;
+            const label = `Detected (${Math.round(detection.score * 100)}%)`;
             const textWidth = ctx.measureText(label).width;
             ctx.fillRect(x, y - 35, textWidth + 20, 30);
             
             ctx.fillStyle = '#000';
             ctx.fillText(label, x + 10, y - 12);
 
-            // Draw measurement line (centerline)
+            // Measurement line
             if (isStable) {
                 ctx.strokeStyle = '#00E676';
                 ctx.lineWidth = 3;
@@ -458,7 +483,6 @@
                 ctx.stroke();
                 ctx.setLineDash([]);
 
-                // Draw measurement points
                 ctx.fillStyle = '#00E676';
                 ctx.beginPath();
                 ctx.arc(x, centerY, 6, 0, 2 * Math.PI);
@@ -471,48 +495,17 @@
 
         async function performMeasurement() {
             if (!detectedBox) {
-                showWarning('No stable detection. Hold camera steady.');
+                showWarning('No detection. Hold camera steady.');
                 return;
             }
 
-            document.getElementById('infoOverlay').style.display = 'block';
-
-            // Check if WebXR is available
-            if (navigator.xr) {
-                try {
-                    const supported = await navigator.xr.isSessionSupported('immersive-ar');
-                    if (supported) {
-                        await measureWithWebXR();
-                        return;
-                    }
-                } catch (err) {
-                    console.log('WebXR not available, using estimation');
-                }
-            }
-
-            // Fallback to pixel-based estimation
-            measureWithEstimation();
-        }
-
-        async function measureWithWebXR() {
-            showWarning('WebXR measurement not fully implemented in this demo. Using estimation method.');
-            measureWithEstimation();
-            
-            // Full WebXR implementation would go here
-            // This requires more complex AR session management
-        }
-
-        function measureWithEstimation() {
             const widthPixels = detectedBox[2];
             const heightPixels = detectedBox[3];
             
-            // Estimation based on typical phone camera FOV and assumed distance
-            // This is a simplified calculation
-            const assumedDistance = 0.5; // 50cm - user should be roughly this far
-            const fovDegrees = 60; // Typical phone camera horizontal FOV
+            const assumedDistance = 0.5;
+            const fovDegrees = 60;
             const fovRadians = fovDegrees * Math.PI / 180;
             
-            // Calculate real-world dimensions
             const widthMeters = 2 * assumedDistance * Math.tan(fovRadians / 2) * (widthPixels / canvas.width);
             const heightMeters = 2 * assumedDistance * Math.tan(fovRadians / 2) * (heightPixels / canvas.height);
             
@@ -522,8 +515,6 @@
             const heightInches = heightMeters * 39.3701;
 
             displayMeasurement(widthCm, heightCm, widthInches, heightInches);
-            
-            document.getElementById('infoOverlay').style.display = 'none';
         }
 
         function displayMeasurement(widthCm, heightCm, widthInches, heightInches) {
@@ -571,13 +562,10 @@
             `;
         }
 
-        // Event listeners
         document.getElementById('measureBtn').addEventListener('click', performMeasurement);
 
-        // Initialize
         window.addEventListener('load', init);
 
-        // Cleanup
         window.addEventListener('beforeunload', () => {
             if (detectionInterval) clearInterval(detectionInterval);
             if (video.srcObject) {
