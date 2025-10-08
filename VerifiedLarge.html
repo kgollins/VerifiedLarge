@@ -222,7 +222,7 @@
         // Configuration
         const MODEL_URL = 'https://kgollins.github.io/VerifiedLarge/dick-detector.onnx';
         const INPUT_SIZE = 416;
-        const DETECTION_CONFIDENCE = 0.5;
+        const DETECTION_CONFIDENCE = 0.3; // Lowered threshold
         const DETECTION_INTERVAL = 500;
         const STABILIZATION_FRAMES = 3;
 
@@ -314,8 +314,10 @@
             feeds[session.inputNames[0]] = inputTensor;
             const results = await session.run(feeds);
             
-            // Get output
+            // Get first output (main detections with shape [1, 2535, 7])
             const output = results[session.outputNames[0]];
+            
+            console.log('Detection output shape:', output.dims);
             
             // Process YOLO output
             return processYOLOOutput(output);
@@ -355,42 +357,67 @@
             const data = output.data;
             const dims = output.dims;
             
-            // YOLO output format varies, this is a common structure
-            // Adjust based on actual model output
-            const numDetections = dims[1];
-            const numValues = dims[2];
+            // Output format: [1, 2535, 7]
+            // 7 values: [center_x, center_y, width, height, objectness, class1_prob, class2_prob]
+            const numDetections = dims[1]; // 2535
+            const numValues = dims[2]; // 7
+            
+            const scaleX = canvas.width / INPUT_SIZE;
+            const scaleY = canvas.height / INPUT_SIZE;
+            
+            let maxConfidence = 0;
             
             for (let i = 0; i < numDetections; i++) {
                 const offset = i * numValues;
                 
-                // Common YOLO format: [x, y, w, h, confidence, ...classes]
-                const confidence = data[offset + 4];
+                // Get values
+                const cx = data[offset];     // center x (0-416)
+                const cy = data[offset + 1]; // center y (0-416)
+                const w = data[offset + 2];  // width (0-416)
+                const h = data[offset + 3];  // height (0-416)
+                const objectness = data[offset + 4]; // objectness score
+                const class1 = data[offset + 5]; // class 1 probability
+                const class2 = data[offset + 6]; // class 2 probability
+                
+                // Calculate final confidence (objectness * class_prob)
+                const confidence = objectness * Math.max(class1, class2);
+                
+                if (confidence > maxConfidence) {
+                    maxConfidence = confidence;
+                }
                 
                 if (confidence > DETECTION_CONFIDENCE) {
-                    const x = data[offset];
-                    const y = data[offset + 1];
-                    const w = data[offset + 2];
-                    const h = data[offset + 3];
-                    
-                    // Convert from normalized coordinates to canvas coordinates
-                    const xCanvas = (x - w / 2) * canvas.width;
-                    const yCanvas = (y - h / 2) * canvas.height;
-                    const wCanvas = w * canvas.width;
-                    const hCanvas = h * canvas.height;
+                    // Convert from center coords to top-left coords
+                    const x = (cx - w / 2) * scaleX;
+                    const y = (cy - h / 2) * scaleY;
+                    const width = w * scaleX;
+                    const height = h * scaleY;
                     
                     detections.push({
-                        bbox: [xCanvas, yCanvas, wCanvas, hCanvas],
+                        bbox: [x, y, width, height],
                         score: confidence,
-                        class: 'object'
+                        class: 'detected'
                     });
                 }
             }
             
-            return detections;
+            // Debug log
+            if (detections.length === 0) {
+                console.log(`No detections above ${DETECTION_CONFIDENCE}. Max confidence found: ${maxConfidence.toFixed(4)}`);
+            }
+            
+            // Sort by confidence and return top detection
+            detections.sort((a, b) => b.score - a.score);
+            return detections.slice(0, 5); // Return top 5
         }
 
         function processDetections(predictions) {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Debug logging
+            if (predictions.length > 0) {
+                console.log(`Found ${predictions.length} detections, top score: ${predictions[0].score.toFixed(3)}`);
+            }
 
             if (predictions.length > 0) {
                 const detection = predictions[0];
